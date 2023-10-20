@@ -10,14 +10,22 @@
 
 <body>
   <div>
+    <h1>Audio Frequency Visualization</h1>
+    <p>Note: Amplitude is NOT in dB and depends on your microphone</p>
+    <label for="ymax">Set Y-Axis Max Value:</label>
+    <input type="text" id="ymax" name="ymax">
+    <button id="updateButton">Update Chart</button>
     <button id="startButton">Start Audio Processing</button>
-    <canvas id="audioVisualizer"></canvas>
+    <h2>Banded Frequencies</h2>
+    <canvas id="audioVisualizerBanded"></canvas>
+    <h2>Full Spectrum</h2>
+    <canvas id="audioVisualizerFull"></canvas>
   </div>
   <!-- <script src="client.js"></script>
      -->
   <script>
     // Create a chart instance to display the audio data
-    const ctx = document.getElementById('audioVisualizer').getContext('2d');
+    const ctxBanded = document.getElementById('audioVisualizerBanded').getContext('2d');
 
     const frequencyBands = [{
         start: 0,
@@ -66,7 +74,7 @@
     ];
 
     const frequencyBandLabels = frequencyBands.map(band => `${band.start}-${band.end}Hz`);
-    const audioChart = new Chart(ctx, {
+    const audioChartBanded = new Chart(ctxBanded, {
       type: 'bar',
       data: {
         labels: frequencyBandLabels, // use the frequency band labels here
@@ -92,24 +100,95 @@
               display: true,
               text: 'Amplitude'
             },
-            max: 150
+            max: 200
           }
         }
       }
     });
-
-    // Web Audio API for FFT
     const audioContext = new AudioContext();
     let analyser = audioContext.createAnalyser();
     analyser.fftSize = 2048;
     let bufferLength = analyser.frequencyBinCount;
     let dataArray = new Uint8Array(bufferLength);
-    audioChart.update();
 
+    const ctxFull = document.getElementById('audioVisualizerFull').getContext('2d');
 
+    const generateFrequencyLabels = (minHz, maxHz, binCount, sampleRate, fftSize) => {
+      const labels = [];
+      const frequencyStep = sampleRate / fftSize;
+      for (let i = 0; i < binCount; i++) {
+        const frequency = i * frequencyStep; // Calculate the frequency of this bin
+        if (frequency >= minHz && frequency <= maxHz) {
+          labels.push(frequency.toFixed(2) + 'Hz');
+        } else {
+          labels.push(''); // Keep the label empty if it's out of the desired range
+        }
+      }
+      return labels;
+    };
 
+    // Create the labels array with a specific frequency range
+    const frequencyLabels = generateFrequencyLabels(0, 25000, analyser.frequencyBinCount, audioContext.sampleRate,
+      analyser.fftSize);
 
-    document.getElementById('startButton').addEventListener('click', function () {
+    const audioChartFull = new Chart(ctxFull, {
+      type: 'line', // line chart for frequency spectrum
+      data: {
+        labels: frequencyLabels,
+        datasets: [{
+          label: 'Amplitude',
+          data: [], // initially empty, to be filled by the real-time audio data
+          backgroundColor: 'rgba(0, 123, 255, 0.5)',
+          borderColor: 'rgba(0, 123, 255, 1)',
+          borderWidth: 1,
+          fill: true,
+          pointRadius: 0
+        }]
+      },
+      options: {
+        scales: {
+          x: {
+            title: {
+              display: true,
+              text: 'Frequency (Hz)'
+            },
+            max: 25000
+          },
+          y: {
+            beginAtZero: true,
+            title: {
+              display: true,
+              text: 'Amplitude'
+            },
+            max: 200
+          }
+        }
+      }
+    });
+
+    audioChartBanded.update();
+    audioChartFull.update();
+
+    document.getElementById('updateButton').addEventListener('click', () => {
+      const ymax = document.getElementById('ymax').value;
+
+      // Check if ymax is a number and positive
+      if (!isNaN(ymax) && +ymax > 0) {
+        const maxYValue = parseFloat(ymax);
+
+        // Update the y-axis max value for both charts
+        audioChartBanded.options.scales.y.max = maxYValue;
+        audioChartFull.options.scales.y.max = maxYValue;
+
+        // Update the charts to reflect the new y-axis max value
+        audioChartBanded.update();
+        audioChartFull.update();
+      } else {
+        alert('Please enter a valid positive number for Y max value.');
+      }
+    });
+
+    document.getElementById('startButton').addEventListener('click', () => {
       // Check if context is in suspended state (autoplay policy)
       if (audioContext.state === 'suspended') {
         audioContext.resume();
@@ -152,8 +231,11 @@
             });
 
             // Update chart with new data
-            audioChart.data.datasets[0].data = bandData;
-            audioChart.update();
+            audioChartBanded.data.datasets[0].data = bandData;
+            audioChartBanded.update();
+
+            audioChartFull.data.datasets[0].data = Array.from(dataArray);
+            audioChartFull.update();
 
             requestAnimationFrame(updateAudioData);
           };
